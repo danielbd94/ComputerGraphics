@@ -1,7 +1,10 @@
 //  
+//
+// Prepared by: Daniel Ben David (דניאל בן דוד) & Ohad Lavi (אוהד לביא)
 // Created by Ran Dror on April 2018
 // Copyright (c) Ran Dror. All right reserved.
 // Code can not be copied and/or distributed without the express permission of author
+//
 //
 
 #include <stdio.h>
@@ -19,7 +22,7 @@
 #define WIN_SIZE 500
 #define CAMERA_DISTANCE_FROM_AXIS_CENTER 10
 
-typedef struct{
+typedef struct {
 	GLfloat point3D[4];
 	GLfloat normal[4];
 	GLfloat point3DeyeCoordinates[4];
@@ -28,11 +31,11 @@ typedef struct{
 	GLfloat PixelValue;
 } Vertex;
 
-enum ProjectionTypeEnum{ ORTHOGRAPHIC = 1, PERSPECTIVE };
-enum DisplayTypeEnum{ FACE_VERTEXES = 11, FACE_COLOR, LIGHTING_FLAT, LIGHTING_GOURARD, LIGHTING_PHONG };
-enum DisplayNormalEnum{ DISPLAY_NORMAL_YES = 21, DISPLAY_NORMAL_NO };
+enum ProjectionTypeEnum { ORTHOGRAPHIC = 1, PERSPECTIVE };
+enum DisplayTypeEnum { FACE_VERTEXES = 11, FACE_COLOR, LIGHTING_FLAT, LIGHTING_GOURARD, LIGHTING_PHONG };
+enum DisplayNormalEnum { DISPLAY_NORMAL_YES = 21, DISPLAY_NORMAL_NO };
 
-typedef struct{
+typedef struct {
 	GLfloat ModelMinVec[3]; //(left, bottom, near) of a model.
 	GLfloat ModelMaxVec[3]; //(right, top, far) of a model.
 	GLfloat CameraPos[3];
@@ -59,7 +62,8 @@ void VertexProcessing(Vertex *v);
 void FaceProcessing(Vertex *v1, Vertex *v2, Vertex *v3, GLfloat FaceColor[3]);
 GLfloat LightingEquation(GLfloat point[3], GLfloat PointNormal[3], GLfloat LightPos[3], GLfloat Kd, GLfloat Ks, GLfloat Ka, GLfloat n);
 void DrawLineBresenham(GLint x1, GLint y1, GLint x2, GLint y2, GLfloat r, GLfloat g, GLfloat b);
-
+GLfloat getMaxV3(GLfloat v1, GLfloat v2, GLfloat v3);
+GLfloat getMinV3(GLfloat v1, GLfloat v2, GLfloat v3);
 
 GLMmodel *model_ptr;
 void ClearColorBuffer();
@@ -76,7 +80,7 @@ void GraphicsPipeline()
 	//calling ModelProcessing every time refreshing screen
 	ModelProcessing();
 
-	//call VertexProcessing for every vertrx
+	//call VertexProcessing for every vertex
 	//and then call FaceProcessing for every face
 	group = model_ptr->groups;
 	srand(0);
@@ -121,42 +125,110 @@ GLfloat Mviewport[16];
 
 void ModelProcessing()
 {
+	GLfloat right = 1.0, left = -1.0, top = 1.0, bottom = -1.0;
+	GLfloat near = CAMERA_DISTANCE_FROM_AXIS_CENTER - 1.0, far = CAMERA_DISTANCE_FROM_AXIS_CENTER + 1.0;
+	GLfloat Cy = 0.0, Cx = 0.0;
+	GLfloat Mscale[16], Mtranslate[16], Meye[16], Mrotate[16];
+	GLfloat VecU[3], VecV[3], VecW[3];
+	GLfloat V_up[3] = { 0.0, 1.0, 0.0 };
+	GLfloat V_center[3] = { 0.0, 0.0, 0.0 };
 
 	// ex2-3-extra: calculating model scaling and translating transformation matrix
 	//////////////////////////////////////////////////////////////////////////////////
-
+	M4x4identity(Mmodeling);
+	M4x4identity(Mtranslate);
+	M4x4identity(Mscale);
 
 	// ex2-3: calculating translate transformation matrix
 	//////////////////////////////////////////////////////////////////////////////////
-
+	Mtranslate[0 + 4 * 3] = GlobalGuiParamsForYou.ModelTranslateVector[0]; // X Position
+	Mtranslate[1 + 4 * 3] = GlobalGuiParamsForYou.ModelTranslateVector[2]; // Y Position
+	Mtranslate[2 + 4 * 3] = GlobalGuiParamsForYou.ModelTranslateVector[1]; // Z Position
 
 	// ex2-3: calculating scale transformation matrix
 	//////////////////////////////////////////////////////////////////////////////////
-	M4x4identity(Mmodeling);
+	Mscale[0 + 4 * 0] = GlobalGuiParamsForYou.ModelScale; // X Scale
+	Mscale[1 + 4 * 1] = GlobalGuiParamsForYou.ModelScale; // Y Scale
+	Mscale[2 + 4 * 2] = GlobalGuiParamsForYou.ModelScale; // Z Scale
 
+	M4multiplyM4(Mmodeling, Mtranslate, Mscale);
 
 	// ex2-4: calculating lookat transformation matrix
 	//////////////////////////////////////////////////////////////////////////////////
 	M4x4identity(Mlookat);
+	M4x4identity(Meye);
+	M4x4identity(Mrotate);
 
+	Vminus(VecW, GlobalGuiParamsForYou.CameraPos, V_center, 3);
+	V3Normalize(VecW);
+
+	// Vector U = (up x W) / |up x W|, NORMALIZED
+	V3cross(VecU, V_up, VecW);
+	V3Normalize(VecU);
+
+	// Vector v = (W x U)
+	V3cross(VecV, VecW, VecU);
+
+	Mrotate[0 + 4 * 0] = VecU[0]; Mrotate[1 + 4 * 0] = VecV[0]; Mrotate[2 + 4 * 0] = VecW[0];
+	Mrotate[0 + 4 * 1] = VecU[1]; Mrotate[1 + 4 * 1] = VecV[1]; Mrotate[2 + 4 * 1] = VecW[1];
+	Mrotate[0 + 4 * 2] = VecU[2]; Mrotate[1 + 4 * 2] = VecV[2]; Mrotate[2 + 4 * 2] = VecW[2];
+
+	Meye[0 + 4 * 3] = -GlobalGuiParamsForYou.CameraPos[0];
+	Meye[1 + 4 * 3] = -GlobalGuiParamsForYou.CameraPos[1];
+	Meye[2 + 4 * 3] = -GlobalGuiParamsForYou.CameraPos[2];
+
+	M4multiplyM4(Mlookat, Mrotate, Meye);
 
 	// ex2-2: calculating Orthographic or Perspective projection transformation matrix
 	//////////////////////////////////////////////////////////////////////////////////
 	M4x4identity(Mprojection);
-
+	if (GlobalGuiParamsForYou.ProjectionType == PERSPECTIVE)
+	{
+		Mprojection[0 + 4 * 0] = (2.0 * near) / (right - left);
+		Mprojection[0 + 4 * 2] = (right + left) / (right - left);
+		Mprojection[1 + 4 * 1] = ((2.0 * near) / (top - bottom));
+		Mprojection[1 + 4 * 2] = (top + bottom) / (top - bottom);
+		Mprojection[2 + 4 * 2] = -((far + near) / (far - near));
+		Mprojection[2 + 4 * 3] = -((2.0 * far * near) / (far - near));
+		Mprojection[3 + 4 * 2] = -1.0;
+		Mprojection[3 + 4 * 3] = 0;
+	}
+	else {
+		Mprojection[0] = (2.0 / (right - left));
+		Mprojection[5] = (2.0 / (top - bottom));
+		Mprojection[10] = -(2.0 / (far - near));
+		Mprojection[12] = -((right + left) / (right - left));
+		Mprojection[13] = -((top + bottom) / (top - bottom));
+		Mprojection[14] = -((far + near) / (far - near));
+	}
 
 	// ex2-2: calculating viewport transformation matrix
 	//////////////////////////////////////////////////////////////////////////////////
 	M4x4identity(Mviewport);
+	M4x4identity(Mscale);
+	M4x4identity(Mtranslate);
+
+	Cx = Cy = 0;
+
+	Mtranslate[0 + 4 * 3] = Cx + WIN_SIZE / 2.0;
+	Mtranslate[1 + 4 * 3] = Cy + WIN_SIZE / 2.0;
+	Mtranslate[2 + 4 * 3] = 0.5;
+
+	Mscale[0 + 4 * 0] = WIN_SIZE / 2.0;
+	Mscale[1 + 4 * 1] = WIN_SIZE / 2.0;
+	Mscale[2 + 4 * 2] = 0.5;
+
+	M4multiplyM4(Mviewport, Mtranslate, Mscale);
 
 
 	// ex3: clearing color and Z-buffer
 	//////////////////////////////////////////////////////////////////////////////////
 	ClearColorBuffer(); // setting color buffer to background color
 	//add here clearing z-buffer
-
+	for (int x = 0; x < WIN_SIZE; x++)
+		for (int y = 0; y < WIN_SIZE; y++)
+			Zbuffer[x][y] = 1;
 }
-
 
 void VertexProcessing(Vertex *v)
 {
@@ -167,18 +239,20 @@ void VertexProcessing(Vertex *v)
 
 	// ex2-3: modeling transformation v->point3D --> point3DafterModelingTrans
 	//////////////////////////////////////////////////////////////////////////////////
-	MatrixCopy(point3DafterModelingTrans, v->point3D, 4);
-
+	//MatrixCopy(point3DafterModelingTrans, v->point3D, 4);
+	M4multiplyV4(point3DafterModelingTrans, Mmodeling, v->point3D);
 
 	// ex2-4: lookat transformation point3DafterModelingTrans --> v->point3DeyeCoordinates
 	//////////////////////////////////////////////////////////////////////////////////
-	MatrixCopy(v->point3DeyeCoordinates, point3DafterModelingTrans, 4);
-
+	//MatrixCopy(v->point3DeyeCoordinates, point3DafterModelingTrans, 4);
+	M4multiplyV4(v->point3DeyeCoordinates, Mlookat, point3DafterModelingTrans);
 
 	// ex2-2: transformation from eye coordinates to screen coordinates v->point3DeyeCoordinates --> v->pointScreen
 	//////////////////////////////////////////////////////////////////////////////////
-	MatrixCopy(v->pointScreen, v->point3DeyeCoordinates, 4);
-
+	//MatrixCopy(v->pointScreen, v->point3DeyeCoordinates, 4);
+	//M4x4identity(temp1);
+	M4multiplyV4(temp1, Mprojection, v->point3DeyeCoordinates);
+	M4multiplyV4(v->pointScreen, Mviewport, temp1);
 
 	// ex2-5: transformation normal from object coordinates to eye coordinates v->normal --> v->NormalEyeCoordinates
 	//////////////////////////////////////////////////////////////////////////////////
@@ -188,10 +262,10 @@ void VertexProcessing(Vertex *v)
 	M3multiplyV3(v->NormalEyeCoordinates, Mlookat3x3, temp1);
 	V3Normalize(v->NormalEyeCoordinates);
 	v->NormalEyeCoordinates[3] = 1;
-	
+
 	// ex2-5: drawing normals 
 	//////////////////////////////////////////////////////////////////////////////////
-	if (GlobalGuiParamsForYou.DisplayNormals == DISPLAY_NORMAL_YES){
+	if (GlobalGuiParamsForYou.DisplayNormals == DISPLAY_NORMAL_YES) {
 		V4HomogeneousDivide(v->point3DeyeCoordinates);
 		VscalarMultiply(temp1, v->NormalEyeCoordinates, 0.05, 3);
 		Vplus(temp2, v->point3DeyeCoordinates, temp1, 4);
@@ -202,13 +276,18 @@ void VertexProcessing(Vertex *v)
 		V4HomogeneousDivide(v->pointScreen);
 		DrawLineBresenham(round(v->pointScreen[0]), round(v->pointScreen[1]), round(point3D_plusNormal_screen[0]), round(point3D_plusNormal_screen[1]), 0, 0, 1);
 	}
-	
+
 	// ex3: calculating lighting for vertex
 	//////////////////////////////////////////////////////////////////////////////////
-
+	v->PixelValue = LightingEquation(
+		v->point3DeyeCoordinates,
+		v->NormalEyeCoordinates,
+		GlobalGuiParamsForYou.LightPosition,
+		GlobalGuiParamsForYou.Lighting_Diffuse,
+		GlobalGuiParamsForYou.Lighting_Specular,
+		GlobalGuiParamsForYou.Lighting_Ambient,
+		GlobalGuiParamsForYou.Lighting_sHininess);
 }
-
-
 
 void FaceProcessing(Vertex *v1, Vertex *v2, Vertex *v3, GLfloat FaceColor[3])
 {
@@ -222,49 +301,237 @@ void FaceProcessing(Vertex *v1, Vertex *v2, Vertex *v3, GLfloat FaceColor[3])
 		DrawLineBresenham(round(v1->pointScreen[0]), round(v1->pointScreen[1]), round(v2->pointScreen[0]), round(v2->pointScreen[1]), 1, 1, 1);
 		DrawLineBresenham(round(v2->pointScreen[0]), round(v2->pointScreen[1]), round(v3->pointScreen[0]), round(v3->pointScreen[1]), 1, 1, 1);
 		DrawLineBresenham(round(v3->pointScreen[0]), round(v3->pointScreen[1]), round(v1->pointScreen[0]), round(v1->pointScreen[1]), 1, 1, 1);
+
+		// drawing line testing
+		//DrawLineBresenham(250, 250, 450, 250, 1, 1, 1); DrawLineBresenham(250, 250, 450, 300, 1, 1, 1); DrawLineBresenham(250, 250, 450, 200, 1, 1, 1); DrawLineBresenham(250, 250, 300, 450, 1, 1, 1); DrawLineBresenham(250, 250, 300, 50, 1, 1, 1); DrawLineBresenham(250, 250, 250, 450, 1, 1, 1); DrawLineBresenham(250, 250, 250, 50, 1, 1, 1); DrawLineBresenham(250, 250, 50, 300, 1, 1, 1); DrawLineBresenham(250, 250, 50, 200, 1, 1, 1); DrawLineBresenham(250, 250, 200, 450, 1, 1, 1); DrawLineBresenham(250, 250, 200, 50, 1, 1, 1); DrawLineBresenham(250, 250, 50, 250, 1, 1, 1);
 	}
-	else{
+	else {
 		//ex3: Barycentric Coordinates and lighting
 		//////////////////////////////////////////////////////////////////////////////////
 
+		GLfloat x1, y1, x2, y2, x3, y3;
+		GLfloat y_min, y_max, x_min, x_max;
+		GLfloat a1, a2, a3;
+		GLfloat b1, b2, b3;
+		GLfloat c1, c2, c3;
+		GLfloat alpha = 0, beta = 0, gamma = 0;
+		GLfloat pixelDepth, flat_shading_color, gourard_shading_color, phong_shading_color;
+		GLfloat phong_position[3], phong_normal[3];
 
+		// rounding x,y from verteces for correct calculations
 
+		x1 = round(v1->pointScreen[0]);
+		y1 = round(v1->pointScreen[1]);
+		x2 = round(v2->pointScreen[0]);
+		y2 = round(v2->pointScreen[1]);
+		x3 = round(v3->pointScreen[0]);
+		y3 = round(v3->pointScreen[1]);
 
+		// calculating the square surrounding the triangle 
 
+		y_min = getMinV3(v1->pointScreen[1], v2->pointScreen[1], v3->pointScreen[1]);
+		y_max = getMaxV3(v1->pointScreen[1], v2->pointScreen[1], v3->pointScreen[1]);
+		x_min = getMinV3(v1->pointScreen[0], v2->pointScreen[0], v3->pointScreen[0]);
+		x_max = getMaxV3(v1->pointScreen[0], v2->pointScreen[0], v3->pointScreen[0]);
+
+		a1 = y1 - y2;
+		b1 = x2 - x1;
+		c1 = (y2 * x1) - (y1 * x2);
+
+		a2 = y2 - y3;
+		b2 = x3 - x2;
+		c2 = (y3 * x2) - (y2 * x3);
+
+		a3 = y3 - y1;
+		b3 = x1 - x3;
+		c3 = (y1 * x3) - (y3 * x1);
+
+		for (GLint x = x_min; x <= x_max && x >= 0; x++)
+		{
+			for (GLint y = y_min; y <= y_max && y >= 0; y++)
+			{
+				alpha = (a1 * x + b1 * y + c1) / (a1 * x3 + b1 * y3 + c1);
+				beta = (a2 * x + b2 * y + c2) / (a2 * x1 + b2 * y1 + c2);
+				gamma = (a3 * x + b3 * y + c3) / (a3 * x2 + b3 * y2 + c3);
+
+				if ((alpha >= 0 && alpha <= 1) && (beta >= 0 && beta <= 1) && (gamma >= 0 && gamma <= 1))
+				{
+					pixelDepth = (alpha * v3->pointScreen[2]) + (beta * v1->pointScreen[2]) + (gamma * v2->pointScreen[2]);
+					if (pixelDepth < Zbuffer[x][y])
+					{
+						Zbuffer[x][y] = pixelDepth;
+						if (GlobalGuiParamsForYou.DisplayType == FACE_COLOR)
+						{
+							setPixel(x, y, FaceColor[0], FaceColor[1], FaceColor[2]);
+						}
+						else if (GlobalGuiParamsForYou.DisplayType == LIGHTING_FLAT)
+						{
+							flat_shading_color = (v1->PixelValue + v2->PixelValue + v3->PixelValue) / 3.0;
+							setPixel(x, y, flat_shading_color, flat_shading_color, flat_shading_color);
+						}
+						else if (GlobalGuiParamsForYou.DisplayType == LIGHTING_GOURARD)
+						{
+							gourard_shading_color = (alpha * v3->PixelValue) + (beta * v1->PixelValue) + (gamma * v2->PixelValue);
+							setPixel(x, y, gourard_shading_color, gourard_shading_color, gourard_shading_color);
+						}
+						else if (GlobalGuiParamsForYou.DisplayType == LIGHTING_PHONG)
+						{
+							for (int i = 0; i < 3; i++)
+							{
+								phong_position[i] = (alpha * v3->point3DeyeCoordinates[i]) + (beta * v1->point3DeyeCoordinates[i]) + (gamma * v2->point3DeyeCoordinates[i]);
+								phong_normal[i] = (alpha * v3->NormalEyeCoordinates[i]) + (beta * v1->NormalEyeCoordinates[i]) + (gamma * v2->NormalEyeCoordinates[i]);
+							}
+							phong_shading_color = LightingEquation(phong_position, phong_normal, GlobalGuiParamsForYou.LightPosition, GlobalGuiParamsForYou.Lighting_Diffuse, GlobalGuiParamsForYou.Lighting_Specular, GlobalGuiParamsForYou.Lighting_Ambient, GlobalGuiParamsForYou.Lighting_sHininess);
+							setPixel(x, y, phong_shading_color, phong_shading_color, phong_shading_color);
+						}
+					}
+				}
+			}
+		}
 	}
 }
+// Finds MAX vertex
+GLfloat getMaxV3(GLfloat v1, GLfloat v2, GLfloat v3) {
+	// v1 max
+	if ((v1 >= v2) && (v1 >= v3))
+		return v1;
+	// v2 max
+	else if (v2 >= v1 && v2 >= v3)
+		return v2;
+	// v3 max
+	else
+		return v3;
+}
 
-
-
+// Finds MIN vertex
+GLfloat getMinV3(GLfloat v1, GLfloat v2, GLfloat v3) {
+	// v1 min
+	if (v1 <= v2 && v1 <= v3)
+		return v1;
+	// v2 min
+	else if (v2 <= v1 && v2 <= v3)
+		return v2;
+	// v3 min
+	else
+		return v3;
+}
 void DrawLineBresenham(GLint x1, GLint y1, GLint x2, GLint y2, GLfloat r, GLfloat g, GLfloat b)
 {
+	//////////////////////////////////////////////////////////////////////////////////
 	//ex2.1: implement Bresenham line drawing algorithm
 	//////////////////////////////////////////////////////////////////////////////////
-	setPixel(x1, y1, 1, 1, 1);
-	setPixel(x2, y2, 1, 1, 1);
+
+	float dx, dy, x, y, a, diff, y_inc;
+	dx = x2 - x1;
+	dy = y2 - y1;
+
+	if (dy < -dx)
+	{
+		int temp;
+		temp = x1;
+		x1 = x2;
+		x2 = temp;
+
+		temp = y1;
+		y1 = y2;
+		y2 = temp;
+
+	}
+
+	if (abs(dx) < abs(dy))
+	{
+		dx = x2 - x1;
+		dy = y2 - y1;
+		y_inc = 1;
+		if (dx < 0)
+		{
+			y_inc = -1;
+			dx = -dx;
+		}
+		diff = 2 * dx - dy;
+		x = x1;
+		for (y = y1; y < y2; y++)
+		{
+			setPixel(x, y, r, g, b);
+			if (diff < 0)
+			{
+				diff += 2 * dx;
+			}
+			else
+			{
+				x += y_inc;
+				diff += 2 * dx - 2 * dy;
+			}
+		}
+	}
+	else
+	{
+		dx = x2 - x1;
+		dy = y2 - y1;
+		y_inc = 1;
+		if (dy < 0)
+		{
+			y_inc = -1;
+			dy = -dy;
+		}
+		a = dy / dx;
+		diff = 2 * dy - dx;
+		y = y1;
+		for (x = x1; x < x2; x++)
+		{
+			setPixel(x, y, r, g, b);
+			if (diff < 0)
+			{
+				diff += 2 * dy;
+			}
+			else
+			{
+				y += y_inc;
+				diff += 2 * dy - 2 * dx;
+			}
+		}
+	}
+
+
 }
 
 
-
+#pragma endregion
 
 GLfloat LightingEquation(GLfloat point[3], GLfloat PointNormal[3], GLfloat LightPos[3], GLfloat Kd, GLfloat Ks, GLfloat Ka, GLfloat n)
 {
 	//ex3: calculate lighting equation
 	//////////////////////////////////////////////////////////////////////////////////
-
-
-	return 1;
+	GLfloat V[3], R[3], N[3], L[3], LNeg[3];
+	GLfloat I_ret, I_light = 1.0;
+	for (int i = 0; i < 3; ++i)
+	{
+		N[i] = PointNormal[i];
+		V[i] = PointNormal[i] - point[i];
+		L[i] = LightPos[i] - point[i];
+		LNeg[i] = point[i] - LightPos[i];
+	}
+	V3Normalize(N);
+	V3Normalize(V);
+	V3Normalize(L);
+	for (int i = 0; i < 3; i++)
+	{
+		R[i] = LNeg[i] - 2 * N[i] * (V3dot(N, L));
+	}
+	V3Normalize(R);
+	I_ret = I_light * (max(Kd * V3dot(N, L), 0) + max(Ks * pow(V3dot(V, R), n), 0) + max(Ka, 0));
+	return I_ret;
 }
 
-
-
-
+#pragma endregion
 
 //////////////////////////////////////////////////////////////////////
 // GUI section
 //////////////////////////////////////////////////////////////////////
 
-//function declerations
+#pragma region GUI section
+
+// Function declarations
 void InitGuiGlobalParams();
 void drawingCB(void);
 void reshapeCB(int width, int height);
@@ -279,9 +546,9 @@ void DisplayColorBuffer();
 void drawstr(char* FontName, int FontSize, GLuint x, GLuint y, char* format, ...);
 void TerminationErrorFunc(char *ErrorString);
 
-enum FileNumberEnum{ TEAPOT = 100, TEDDY, PUMPKIN, COW, SIMPLE_PYRAMID, FIRST_EXAMPLE, SIMPLE_3D_EXAMPLE, SPHERE, TRIANGLE, Z_BUFFER_EXAMPLE };
+enum FileNumberEnum { TEAPOT = 100, TEDDY, PUMPKIN, COW, SIMPLE_PYRAMID, FIRST_EXAMPLE, SIMPLE_3D_EXAMPLE, SPHERE, TRIANGLE, Z_BUFFER_EXAMPLE };
 
-typedef struct{
+typedef struct {
 	enum FileNumberEnum FileNum;
 	GLfloat CameraRaduis;
 	GLint   CameraAnleHorizontal;
@@ -319,33 +586,33 @@ int main(int argc, char** argv)
 
 	//registering and creating menu
 	submenu1_id = glutCreateMenu(menuCB);
-		glutAddMenuEntry("open teapot.obj", TEAPOT);
-		glutAddMenuEntry("open teddy.obj", TEDDY);
-		glutAddMenuEntry("open pumpkin.obj", PUMPKIN);
-		glutAddMenuEntry("open cow.obj", COW);
-		glutAddMenuEntry("open Simple3Dexample.obj", SIMPLE_3D_EXAMPLE);
-		glutAddMenuEntry("open SimplePyramid.obj", SIMPLE_PYRAMID);
-		glutAddMenuEntry("open sphere.obj", SPHERE);
-		glutAddMenuEntry("open triangle.obj", TRIANGLE);
-		glutAddMenuEntry("open FirstExample.obj", FIRST_EXAMPLE);
-		glutAddMenuEntry("open ZbufferExample.obj", Z_BUFFER_EXAMPLE);
-		submenu2_id = glutCreateMenu(menuCB);
-		glutAddMenuEntry("Orthographic", ORTHOGRAPHIC);
-		glutAddMenuEntry("Perspective",  PERSPECTIVE);
+	glutAddMenuEntry("open teapot.obj", TEAPOT);
+	glutAddMenuEntry("open teddy.obj", TEDDY);
+	glutAddMenuEntry("open pumpkin.obj", PUMPKIN);
+	glutAddMenuEntry("open cow.obj", COW);
+	glutAddMenuEntry("open Simple3Dexample.obj", SIMPLE_3D_EXAMPLE);
+	glutAddMenuEntry("open SimplePyramid.obj", SIMPLE_PYRAMID);
+	glutAddMenuEntry("open sphere.obj", SPHERE);
+	glutAddMenuEntry("open triangle.obj", TRIANGLE);
+	glutAddMenuEntry("open FirstExample.obj", FIRST_EXAMPLE);
+	glutAddMenuEntry("open ZbufferExample.obj", Z_BUFFER_EXAMPLE);
+	submenu2_id = glutCreateMenu(menuCB);
+	glutAddMenuEntry("Orthographic", ORTHOGRAPHIC);
+	glutAddMenuEntry("Perspective", PERSPECTIVE);
 	submenu3_id = glutCreateMenu(menuCB);
-		glutAddMenuEntry("Face Vertexes", FACE_VERTEXES);
-		glutAddMenuEntry("Face Color", FACE_COLOR);
-		glutAddMenuEntry("Lighting Flat", LIGHTING_FLAT);
-		glutAddMenuEntry("Lighting Gourard", LIGHTING_GOURARD);
-		glutAddMenuEntry("Lighting Phong", LIGHTING_PHONG);
+	glutAddMenuEntry("Face Vertexes", FACE_VERTEXES);
+	glutAddMenuEntry("Face Color", FACE_COLOR);
+	glutAddMenuEntry("Lighting Flat", LIGHTING_FLAT);
+	glutAddMenuEntry("Lighting Gourard", LIGHTING_GOURARD);
+	glutAddMenuEntry("Lighting Phong", LIGHTING_PHONG);
 	submenu4_id = glutCreateMenu(menuCB);
-		glutAddMenuEntry("Yes", DISPLAY_NORMAL_YES);
-		glutAddMenuEntry("No", DISPLAY_NORMAL_NO);
+	glutAddMenuEntry("Yes", DISPLAY_NORMAL_YES);
+	glutAddMenuEntry("No", DISPLAY_NORMAL_NO);
 	glutCreateMenu(menuCB);
-		glutAddSubMenu("Open Model File", submenu1_id);
-		glutAddSubMenu("Projection Type", submenu2_id);
-		glutAddSubMenu("Display type",    submenu3_id);
-		glutAddSubMenu("Display Normals", submenu4_id);
+	glutAddSubMenu("Open Model File", submenu1_id);
+	glutAddSubMenu("Projection Type", submenu2_id);
+	glutAddSubMenu("Display type", submenu3_id);
+	glutAddSubMenu("Display Normals", submenu4_id);
 	glutAttachMenu(GLUT_RIGHT_BUTTON);
 
 	LoadModelFile();
@@ -384,15 +651,14 @@ void drawingCB(void)
 	if (er) printf("error: %d\n", er);
 }
 
-
 void LoadModelFile()
 {
-	if (model_ptr){
+	if (model_ptr) {
 		glmDelete(model_ptr);
 		model_ptr = 0;
 	}
 
-	switch (GlobalGuiCalculations.FileNum){
+	switch (GlobalGuiCalculations.FileNum) {
 	case TEAPOT:
 		model_ptr = glmReadOBJ("teapot.obj");
 		break;
@@ -443,8 +709,8 @@ void LoadModelFile()
 void ClearColorBuffer()
 {
 	GLuint x, y;
-	for (y = 0; y <WIN_SIZE; y++){
-		for (x = 0; x < WIN_SIZE; x++){
+	for (y = 0; y < WIN_SIZE; y++) {
+		for (x = 0; x < WIN_SIZE; x++) {
 			ColorBuffer[y][x][0] = 0;
 			ColorBuffer[y][x][1] = 0;
 			ColorBuffer[y][x][2] = 0;
@@ -454,7 +720,7 @@ void ClearColorBuffer()
 
 void setPixel(GLint x, GLint y, GLfloat r, GLfloat g, GLfloat b)
 {
-	if (x >= 0 && x < WIN_SIZE && y >= 0 && y < WIN_SIZE){
+	if (x >= 0 && x < WIN_SIZE && y >= 0 && y < WIN_SIZE) {
 		ColorBuffer[y][x][0] = round(r * 255);
 		ColorBuffer[y][x][1] = round(g * 255);
 		ColorBuffer[y][x][2] = round(b * 255);
@@ -465,15 +731,14 @@ void DisplayColorBuffer()
 {
 	GLuint x, y;
 	glBegin(GL_POINTS);
-	for (y = 0; y < WIN_SIZE; y++){
-		for (x = 0; x <WIN_SIZE; x++){
+	for (y = 0; y < WIN_SIZE; y++) {
+		for (x = 0; x < WIN_SIZE; x++) {
 			glColor3ub(min(255, ColorBuffer[y][x][0]), min(255, ColorBuffer[y][x][1]), min(255, ColorBuffer[y][x][2]));
-				glVertex2f(x + 0.5, y + 0.5);   // The 0.5 is to target pixel
-			}
+			glVertex2f(x + 0.5, y + 0.5);   // The 0.5 is to target pixel
 		}
+	}
 	glEnd();
 }
-
 
 void InitGuiGlobalParams()
 {
@@ -494,16 +759,15 @@ void InitGuiGlobalParams()
 	GlobalGuiParamsForYou.DisplayType = FACE_VERTEXES;
 	GlobalGuiParamsForYou.ProjectionType = ORTHOGRAPHIC;
 	GlobalGuiParamsForYou.DisplayNormals = DISPLAY_NORMAL_NO;
-	GlobalGuiParamsForYou.Lighting_Diffuse   = 0.75;
-	GlobalGuiParamsForYou.Lighting_Specular  = 0.2;
-	GlobalGuiParamsForYou.Lighting_Ambient   = 0.2;
+	GlobalGuiParamsForYou.Lighting_Diffuse = 0.75;
+	GlobalGuiParamsForYou.Lighting_Specular = 0.2;
+	GlobalGuiParamsForYou.Lighting_Ambient = 0.2;
 	GlobalGuiParamsForYou.Lighting_sHininess = 40;
 	GlobalGuiParamsForYou.LightPosition[0] = 10;
 	GlobalGuiParamsForYou.LightPosition[1] = 5;
 	GlobalGuiParamsForYou.LightPosition[2] = 0;
 
 }
-
 
 void reshapeCB(int width, int height)
 {
@@ -523,8 +787,7 @@ void reshapeCB(int width, int height)
 	gluOrtho2D(0, WIN_SIZE, 0, WIN_SIZE);
 }
 
-
-void keyboardCB(unsigned char key, int x, int y){
+void keyboardCB(unsigned char key, int x, int y) {
 	switch (key) {
 	case 27:
 		exit(0);
@@ -582,7 +845,6 @@ void keyboardCB(unsigned char key, int x, int y){
 	}
 }
 
-
 void keyboardSpecialCB(int key, int x, int y)
 {
 	switch (key) {
@@ -605,7 +867,6 @@ void keyboardSpecialCB(int key, int x, int y)
 	}
 }
 
-
 void MouseClickCB(int button, int state, int x, int y)
 {
 	GlobalGuiCalculations.MouseLastPos[0] = x;
@@ -614,8 +875,8 @@ void MouseClickCB(int button, int state, int x, int y)
 
 void MouseMotionCB(int x, int y)
 {
-	GlobalGuiCalculations.CameraAnleHorizontal += (x - GlobalGuiCalculations.MouseLastPos[0])/40;
-	GlobalGuiCalculations.CameraAnleVertical   -= (y - GlobalGuiCalculations.MouseLastPos[1])/40;
+	GlobalGuiCalculations.CameraAnleHorizontal += (x - GlobalGuiCalculations.MouseLastPos[0]) / 40;
+	GlobalGuiCalculations.CameraAnleVertical -= (y - GlobalGuiCalculations.MouseLastPos[1]) / 40;
 
 	if (GlobalGuiCalculations.CameraAnleVertical > 30)
 		GlobalGuiCalculations.CameraAnleVertical = 30;
@@ -623,17 +884,17 @@ void MouseMotionCB(int x, int y)
 		GlobalGuiCalculations.CameraAnleVertical = -30;
 
 	GlobalGuiCalculations.CameraAnleHorizontal = (GlobalGuiCalculations.CameraAnleHorizontal + 360) % 360;
-//	GlobalGuiCalculations.CameraAnleVertical   = (GlobalGuiCalculations.CameraAnleVertical   + 360) % 360;
+	//	GlobalGuiCalculations.CameraAnleVertical   = (GlobalGuiCalculations.CameraAnleVertical   + 360) % 360;
 
-	GlobalGuiParamsForYou.CameraPos[0] = GlobalGuiCalculations.CameraRaduis * sin((float)(GlobalGuiCalculations.CameraAnleVertical+90)*M_PI / 180) * cos((float)(GlobalGuiCalculations.CameraAnleHorizontal+90)*M_PI / 180);
-	GlobalGuiParamsForYou.CameraPos[2] = GlobalGuiCalculations.CameraRaduis * sin((float)(GlobalGuiCalculations.CameraAnleVertical+90)*M_PI / 180) * sin((float)(GlobalGuiCalculations.CameraAnleHorizontal+90)*M_PI / 180);
-	GlobalGuiParamsForYou.CameraPos[1] = GlobalGuiCalculations.CameraRaduis * cos((float)(GlobalGuiCalculations.CameraAnleVertical+90)*M_PI / 180);
+	GlobalGuiParamsForYou.CameraPos[0] = GlobalGuiCalculations.CameraRaduis * sin((float)(GlobalGuiCalculations.CameraAnleVertical + 90)*M_PI / 180) * cos((float)(GlobalGuiCalculations.CameraAnleHorizontal + 90)*M_PI / 180);
+	GlobalGuiParamsForYou.CameraPos[2] = GlobalGuiCalculations.CameraRaduis * sin((float)(GlobalGuiCalculations.CameraAnleVertical + 90)*M_PI / 180) * sin((float)(GlobalGuiCalculations.CameraAnleHorizontal + 90)*M_PI / 180);
+	GlobalGuiParamsForYou.CameraPos[1] = GlobalGuiCalculations.CameraRaduis * cos((float)(GlobalGuiCalculations.CameraAnleVertical + 90)*M_PI / 180);
 	glutPostRedisplay();
 }
 
 void menuCB(int value)
 {
-	switch (value){
+	switch (value) {
 	case ORTHOGRAPHIC:
 	case PERSPECTIVE:
 		GlobalGuiParamsForYou.ProjectionType = value;
@@ -658,8 +919,6 @@ void menuCB(int value)
 		glutPostRedisplay();
 	}
 }
-
-
 
 void drawstr(char* FontName, int FontSize, GLuint x, GLuint y, char* format, ...)
 {
@@ -696,7 +955,6 @@ void drawstr(char* FontName, int FontSize, GLuint x, GLuint y, char* format, ...
 		glutBitmapCharacter(font_style, *s);
 }
 
-
 void TerminationErrorFunc(char *ErrorString)
 {
 	char string[256];
@@ -706,3 +964,4 @@ void TerminationErrorFunc(char *ErrorString)
 	exit(0);
 }
 
+#pragma endregion}
